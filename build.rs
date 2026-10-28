@@ -1,5 +1,33 @@
 use std::process::Command;
 
+/// What this build is, for the updater's "only releases replace themselves"
+/// rule.
+///
+/// A working tree reports `git describe`, so `0.1.0-5-gabc1234` and
+/// `0.1.0-dirty` are recognisable as builds from source. A release is checked
+/// out at a clean tag, and CI checkouts are shallow with no tags at all, so
+/// anything that is not a describe stamp falls back to the crate version, which
+/// the release workflow injects.
+fn build_stamp() -> String {
+    let base = std::env::var("CARGO_PKG_VERSION").unwrap_or_default();
+    described()
+        .filter(|stamp| stamp.contains("-g") || stamp.ends_with("-dirty"))
+        .unwrap_or(base)
+}
+
+fn described() -> Option<String> {
+    let output = Command::new("git")
+        .args(["describe", "--tags", "--always", "--dirty"])
+        .current_dir(std::env::var("CARGO_MANIFEST_DIR").ok()?)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let stamp = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!stamp.is_empty()).then_some(stamp)
+}
+
 /// Cross-target type-check hook.
 ///
 /// `AIDGET_CHECK_TARGET=1` skips `tauri_build`, whose Windows resource step
@@ -9,6 +37,8 @@ use std::process::Command;
 fn main() {
     let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     println!("cargo:rerun-if-env-changed=AIDGET_CHECK_TARGET");
+    println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rustc-env=AIDGET_BUILD_STAMP={}", build_stamp());
     if std::env::var_os("AIDGET_CHECK_TARGET").is_some() {
         return;
     }
