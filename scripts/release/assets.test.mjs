@@ -25,6 +25,15 @@ describe("release assets", () => {
     expect(assetName("aidget-0.2.0-1.x86_64.rpm", "0.2.0")).toBe(
       "aidget_0.2.0_amd64.rpm",
     );
+    expect(assetName("aidget_0.2.0_aarch64.app.zip", "0.2.0")).toBe(
+      "aidget_0.2.0_aarch64.app.zip",
+    );
+    expect(assetName("aidget-0.2.0-arm64.app.zip", "0.2.0")).toBe(
+      "aidget_0.2.0_aarch64.app.zip",
+    );
+    expect(assetName("aidget_0.2.0_x64.app.zip", "0.2.0")).toBe(
+      "aidget_0.2.0_x64.app.zip",
+    );
     expect(() => assetName("notes.txt", "0.2.0")).toThrow();
   });
 
@@ -37,6 +46,7 @@ describe("release assets", () => {
     await mkdir(join(input, "appimage"), { recursive: true });
     await mkdir(join(input, "deb"), { recursive: true });
     await mkdir(join(input, "rpm"), { recursive: true });
+    await mkdir(join(input, "appzip"), { recursive: true });
 
     const sources = [
       ["dmg/aidget_0.2.0_aarch64.dmg", "arm"],
@@ -45,17 +55,22 @@ describe("release assets", () => {
       ["appimage/aidget_0.2.0_amd64.AppImage", "appimage"],
       ["deb/aidget_0.2.0_amd64.deb", "deb"],
       ["rpm/aidget-0.2.0-1.x86_64.rpm", "rpm"],
+      ["appzip/aidget_0.2.0_aarch64.app.zip", "arm-app"],
+      ["appzip/aidget_0.2.0_x64.app.zip", "intel-app"],
     ];
     for (const [path, body] of sources) {
       await writeFile(join(input, path), body);
     }
 
     const names = await collectAssets({ input, output, version: "0.2.0" });
-    expect(names).toHaveLength(6);
+    expect(names).toHaveLength(8);
     expect(await readFile(join(output, "aidget_0.2.0_amd64.rpm"), "utf8")).toBe("rpm");
     expect(await readFile(join(output, "SHA256SUMS"), "utf8")).toMatch(
       /aidget_0\.2\.0_x64-setup\.exe/,
     );
+    expect(
+      await readFile(join(output, "SHA256SUMS"), "utf8"),
+    ).toMatch(/aidget_0\.2\.0_aarch64\.app\.zip/);
   });
 
   test("collectAssets fails when a required platform is missing", async () => {

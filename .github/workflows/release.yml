@@ -66,18 +66,22 @@ jobs:
             os: macos-latest
             target: aarch64-apple-darwin
             bundles: dmg
+            arch: aarch64
           - name: macos-x64
             os: macos-15-intel
             target: x86_64-apple-darwin
             bundles: dmg
+            arch: x64
           - name: windows-x64
             os: windows-2022
             target: ''
             bundles: nsis
+            arch: x64
           - name: linux-x64
             os: ubuntu-22.04
             target: ''
             bundles: appimage,deb,rpm
+            arch: amd64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -120,6 +124,29 @@ jobs:
       - name: Build native target
         if: matrix.target == ''
         run: pnpm tauri build --ci --bundles "${{ matrix.bundles }}"
+
+      - name: Zip the macOS app for in-app updates
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          VERSION: ${{ needs.metadata.outputs.version }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          APP="target/${{ matrix.target }}/release/bundle/macos/aidget.app"
+          test -d "$APP"
+          mkdir -p appzip
+          # --keepParent keeps the .app wrapper, which the updater swaps in as a
+          # whole; without it the archive holds the bundle's contents instead.
+          ditto -c -k --keepParent "$APP" "appzip/aidget_${VERSION}_${ARCH}.app.zip"
+
+      - name: Upload macOS update archive
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ${{ matrix.name }}-appzip
+          if-no-files-found: error
+          path: appzip/*.app.zip
 
       - name: Upload macOS bundle
         if: runner.os == 'macOS'
@@ -200,7 +227,7 @@ jobs:
             --title "aidget $TAG" \
             --notes-file release-notes.md
 
-          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 7
+          test "$(gh release view "$TAG" --json assets --jq '.assets | length')" -eq 9
 
       - name: Publish latest
         env:
