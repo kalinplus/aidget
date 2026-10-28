@@ -69,8 +69,18 @@ jobs:
         run: cargo check --lib
 
       - name: Rust tests
-        if: runner.os == 'macOS'
+        if: runner.os != 'Windows'
         run: cargo test
+
+      # Windows runs the integration tests the way the cross-target check runs:
+      # without `tauri_build`, whose resource step needs a toolchain the runner
+      # does not document having. The tests need no generated context, and this
+      # still compiles the `cfg(target_os = "windows")` install path.
+      - name: Rust tests (Windows)
+        if: runner.os == 'Windows'
+        env:
+          AIDGET_CHECK_TARGET: '1'
+        run: cargo test --test main
 
       - name: UI and release-script tests
         if: runner.os == 'Linux'
