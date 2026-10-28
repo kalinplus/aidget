@@ -682,11 +682,15 @@ body[data-platform="linux"] .window-controls { display: flex; }
 .settings-row + .settings-row { border-top: 1px solid var(--line); }
 .setting-label { font-size: 13px; font-weight: 550; }
 .setting-value { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+/* Release notes are markdown from GitHub; shown as written, wrapped, and
+   capped so a long changelog cannot push the rest of the page away. */
+.update-notes-row { padding-top: 0; }
+.update-notes { max-height: 8rem; margin: 0; overflow: auto; color: var(--muted); font-size: 12px; line-height: 1.5; white-space: pre-wrap; }
 
 .settings-segmented { border-radius: 9px; background: var(--page); }
 .settings-segmented .segment-button { min-width: 68px; height: 28px; padding: 0 8px; font-size: 12px; }
 .language-select { min-width: 132px; height: 30px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 12px; }
-.community-actions { display: flex; gap: 7px; }
+.community-actions { display: flex; gap: 7px; align-items: center; }
 .community-actions button { min-height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12px; }
 .community-actions button:disabled { color: var(--text); opacity: 0.62; cursor: default; }
 

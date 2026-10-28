@@ -102,6 +102,7 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
     let store_for_server = Arc::new(store.clone());
 
     let app = tauri::Builder::default()
+        .manage(aidget::update::UpdateService::new())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             Some(vec!["ui", "--no-main-window"]),
@@ -132,7 +133,13 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
             widget_storage_remove,
             widget_storage_clear,
             integration_state,
-            set_agent_integration
+            set_agent_integration,
+            aidget::runtime::update_glue::update_state,
+            aidget::runtime::update_glue::update_check,
+            aidget::runtime::update_glue::update_download,
+            aidget::runtime::update_glue::update_install,
+            aidget::runtime::update_glue::update_auto_download,
+            aidget::runtime::update_glue::update_set_auto_download
         ])
         .setup(move |app| {
             #[cfg(target_os = "macos")]
@@ -154,6 +161,7 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
                 endpoint,
             )?;
             tray(app.handle())?;
+            aidget::runtime::update_glue::start_update_check(app.handle());
             if show_main_window {
                 println!(
                     "aidget ui ready — data at {}",
@@ -166,14 +174,15 @@ fn run_ui(show_main_window: bool, detach: bool) -> Result<()> {
         .map_err(|error| Error::Other(error.to_string()))?;
 
     app.run(|handle, event| {
-        // The handle is only used by the macOS reopen path.
-        #[cfg(not(target_os = "macos"))]
-        let _ = handle;
         match event {
             // A tray app must survive closing its last widget window.
             tauri::RunEvent::ExitRequested {
                 code: None, api, ..
             } => api.prevent_exit(),
+            // A downloaded update also goes in as the app quits, so the next
+            // launch is the new version even when the user never clicked
+            // install.
+            tauri::RunEvent::Exit => aidget::runtime::update_glue::install_on_quit(handle),
             #[cfg(target_os = "macos")]
             tauri::RunEvent::Reopen { .. } => {
                 if let Err(error) = ui::show_main_now(handle) {

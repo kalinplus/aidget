@@ -10,6 +10,7 @@ use crate::common::utils::atomic_write;
 pub const SETTINGS_FILE: &str = "settings.toml";
 pub const DEFAULT_SCREENSHOT_RETENTION: usize = 30;
 pub const DEFAULT_TRASH_RETENTION: usize = 20;
+pub const DEFAULT_AUTO_DOWNLOAD: bool = true;
 
 /// User-editable retention limits stored at the root of the aidget data directory.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
@@ -19,6 +20,14 @@ pub struct Settings {
     pub screenshot_retention: NonZeroUsize,
     /// Maximum number of widget directories under `trash/`.
     pub trash_retention: NonZeroUsize,
+    /// Whether a newer release is downloaded without asking. Defaults on, the
+    /// way Magpie ships it; a click on "Download update" downloads regardless.
+    #[serde(default = "auto_download_default")]
+    pub auto_download: bool,
+}
+
+fn auto_download_default() -> bool {
+    DEFAULT_AUTO_DOWNLOAD
 }
 
 impl Default for Settings {
@@ -28,6 +37,7 @@ impl Default for Settings {
                 .expect("default screenshot retention is non-zero"),
             trash_retention: NonZeroUsize::new(DEFAULT_TRASH_RETENTION)
                 .expect("default trash retention is non-zero"),
+            auto_download: DEFAULT_AUTO_DOWNLOAD,
         }
     }
 }
@@ -85,13 +95,27 @@ fn settings_path(root: &Path) -> PathBuf {
 }
 
 fn default_document() -> String {
+    document(&Settings::default())
+}
+
+/// Render `settings` as the file a user edits, comments included.
+fn document(settings: &Settings) -> String {
     format!(
         "# Maximum number of screenshots kept in state/screenshots.\n\
-screenshot_retention = {DEFAULT_SCREENSHOT_RETENTION}\n\
+screenshot_retention = {}\n\
 \n\
 # Maximum number of deleted widgets kept in trash.\n\
-trash_retention = {DEFAULT_TRASH_RETENTION}\n"
+trash_retention = {}\n\
+\n\
+# Download a newer release as soon as one is found.\n\
+auto_download = {}\n",
+        settings.screenshot_retention, settings.trash_retention, settings.auto_download
     )
+}
+
+/// Replace `settings.toml` with `settings`.
+pub fn save(root: &Path, settings: &Settings) -> Result<()> {
+    atomic_write(&settings_path(root), document(settings).as_bytes())
 }
 
 enum RetentionKind {

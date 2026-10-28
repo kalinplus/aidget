@@ -127,6 +127,11 @@ impl Store {
         retention::load(&self.root)
     }
 
+    /// Replace `settings.toml`.
+    pub fn save_settings(&self, settings: &Settings) -> Result<()> {
+        retention::save(&self.root, settings)
+    }
+
     /// Keep only the newest screenshot PNGs allowed by `settings.toml`.
     pub fn prune_screenshots(&self) -> Result<()> {
         let settings = self.load_settings()?;

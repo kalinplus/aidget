@@ -99,6 +99,13 @@ const widgetSortButton = document.querySelector<HTMLButtonElement>("[data-widget
 const widgetSortLabel = widgetSortButton.querySelector<HTMLElement>("[data-sort-label]")!;
 const brandMark = document.querySelector<HTMLImageElement>("[data-brand-icon]")!;
 const version = document.querySelector<HTMLElement>("[data-version]")!;
+const updateStatus = document.querySelector<HTMLElement>("[data-update-status]")!;
+const updateCheckButton = document.querySelector<HTMLButtonElement>("[data-update-check]")!;
+const updateDownloadButton = document.querySelector<HTMLButtonElement>("[data-update-download]")!;
+const updateInstallButton = document.querySelector<HTMLButtonElement>("[data-update-install]")!;
+const updateNotes = document.querySelector<HTMLElement>("[data-update-notes]")!;
+const updateNotesRow = document.querySelector<HTMLElement>("[data-update-notes-row]")!;
+const updateAutoDownload = document.querySelector<HTMLButtonElement>("[data-update-auto-download]")!;
 const autoStart = document.querySelector<HTMLButtonElement>("[data-autostart]")!;
 const language = document.querySelector<HTMLSelectElement>("[data-language]")!;
 const mcpCommandOutput = document.querySelector<HTMLElement>("[data-mcp-command]")!;
@@ -200,6 +207,10 @@ function renderPage() {
   renderFilters();
   renderEmptyState();
   if (page === "integrations") ensureIntegrationInfo();
+  if (page === "about") {
+    refreshUpdateState();
+    refreshAutoDownload();
+  }
   renderIntegration();
   renderDescription();
   filterControl.refresh();
@@ -332,6 +343,185 @@ function renderPreferences() {
   themeControl.setValue(theme);
   language.value = locale;
 }
+
+// What the backend reports about the update flow.
+interface UpdateSnapshot {
+  state:
+    | "idle"
+    | "checking"
+    | "latest"
+    | "no_release"
+    | "source"
+    | "found"
+    | "downloading"
+    | "ready"
+    | "installing"
+    | "error";
+  current: string;
+  latest?: string;
+  error?: string;
+  done?: number;
+  total?: number;
+  notes?: string;
+  staged: boolean;
+}
+
+let updateSnapshot: UpdateSnapshot | undefined;
+
+const updateStateMessages: Record<UpdateSnapshot["state"], MessageKey> = {
+  idle: "updateIdle",
+  checking: "updateChecking",
+  latest: "updateLatest",
+  no_release: "updateNoRelease",
+  source: "updateSource",
+  found: "updateFound",
+  downloading: "updateDownloading",
+  ready: "updateReady",
+  installing: "updateInstalling",
+  error: "updateFailed",
+};
+
+function renderUpdate() {
+  const snapshot = updateSnapshot;
+  // What is possible comes from what is on disk, not from what the last network
+  // step did: a failed check, download or install must not take away work that
+  // is still available.
+  const staged = snapshot?.staged ?? false;
+  const busy =
+    snapshot?.state === "checking" ||
+    snapshot?.state === "downloading" ||
+    snapshot?.state === "installing";
+  const downloadable =
+    !busy &&
+    !staged &&
+    Boolean(snapshot?.latest) &&
+    snapshot?.state !== "idle" &&
+    snapshot?.state !== "latest" &&
+    snapshot?.state !== "no_release" &&
+    snapshot?.state !== "source";
+  updateDownloadButton.hidden = !downloadable;
+  updateInstallButton.hidden = !staged || busy;
+  // The notes belong to the update: an up-to-date build has nothing to say.
+  const announced = snapshot?.state === "found" || snapshot?.state === "ready";
+  const notes = announced ? snapshot?.notes : undefined;
+  updateNotesRow.hidden = !notes;
+  updateNotes.textContent = notes ?? "";
+  if (!snapshot) {
+    updateStatus.textContent = "—";
+    return;
+  }
+  const { state, latest, error, done, total } = snapshot;
+  const label = t(updateStateMessages[state]);
+  const percent = state === "downloading" && total
+    ? `${Math.floor(((done ?? 0) / total) * 100)}%`
+    : undefined;
+  const detail = state === "found" || state === "ready"
+    ? latest
+    : state === "error"
+      ? error
+      : percent;
+  updateStatus.textContent = detail ? `${label} ${detail}` : label;
+  // A failed check next to an update that is already downloaded: keep the
+  // update and say why the check failed, instead of replacing one with the
+  // other.
+  if (state === "ready" && error) showFault(error);
+}
+
+function refreshAutoDownload() {
+  void invoke<boolean>("update_auto_download")
+    .then((enabled) => updateAutoDownload.setAttribute("aria-checked", String(enabled)))
+    .catch((error: unknown) => {
+      showFault(`${t("updateSettingsFailed")}: ${String(error)}`);
+    });
+}
+
+let updatePoll: number | undefined;
+
+// Re-read the snapshot while a step runs, so progress and the settle happen
+// without the user pressing anything.
+function watchUpdate() {
+  window.clearTimeout(updatePoll);
+  if (!updateSnapshot) return;
+  const busy = updateSnapshot.state === "checking" || updateSnapshot.state === "downloading";
+  if (!busy) return;
+  updatePoll = window.setTimeout(() => {
+    void invoke<UpdateSnapshot>("update_state")
+      .then((snapshot) => {
+        updateSnapshot = snapshot;
+        renderUpdate();
+        watchUpdate();
+      })
+      .catch(() => undefined);
+  }, 400);
+}
+
+function refreshUpdateState() {
+  void invoke<UpdateSnapshot>("update_state")
+    .then((snapshot) => {
+      updateSnapshot = snapshot;
+      renderUpdate();
+      watchUpdate();
+    })
+    .catch((error: unknown) => {
+      showFault(`${t("updateFailed")}: ${String(error)}`);
+    });
+}
+
+updateDownloadButton.addEventListener("click", async () => {
+  updateDownloadButton.disabled = true;
+  fault.hidden = true;
+  try {
+    updateSnapshot = await invoke<UpdateSnapshot>("update_download");
+    renderUpdate();
+    watchUpdate();
+  } catch (error) {
+    showFault(`${t("updateFailed")}: ${String(error)}`);
+  } finally {
+    updateDownloadButton.disabled = false;
+  }
+});
+
+updateInstallButton.addEventListener("click", async () => {
+  updateInstallButton.disabled = true;
+  fault.hidden = true;
+  try {
+    // A successful install exits the app, so this call may never resolve.
+    updateSnapshot = await invoke<UpdateSnapshot>("update_install");
+    renderUpdate();
+  } catch (error) {
+    showFault(`${t("updateFailed")}: ${String(error)}`);
+  } finally {
+    updateInstallButton.disabled = false;
+  }
+});
+
+updateAutoDownload.addEventListener("click", async () => {
+  const enabled = updateAutoDownload.getAttribute("aria-checked") !== "true";
+  updateAutoDownload.disabled = true;
+  fault.hidden = true;
+  try {
+    await invoke("update_set_auto_download", { enabled });
+    updateAutoDownload.setAttribute("aria-checked", String(enabled));
+  } catch (error) {
+    showFault(`${t("updateSettingsFailed")}: ${String(error)}`);
+  } finally {
+    updateAutoDownload.disabled = false;
+  }
+});
+
+updateCheckButton.addEventListener("click", async () => {
+  updateCheckButton.disabled = true;
+  fault.hidden = true;
+  try {
+    updateSnapshot = await invoke<UpdateSnapshot>("update_check");
+    renderUpdate();
+    watchUpdate();
+  } catch (error) {
+    showFault(`${t("updateFailed")}: ${String(error)}`);
+  } finally {
+    updateCheckButton.disabled = false;
+  }
+});
 
 function createView(widget: WidgetSummary): WidgetView {
   const root = document.createElement("article");

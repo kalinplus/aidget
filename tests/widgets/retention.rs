@@ -146,3 +146,43 @@ fn trash_retention_keeps_newest_directories() {
     assert!(trash.join("widget-20261022T000020").exists());
     assert!(note.exists());
 }
+
+#[test]
+fn auto_download_defaults_on_and_survives_a_save() {
+    let (_dir, root) = root();
+    assert!(retention::load(&root).unwrap().auto_download);
+
+    let mut settings = retention::load(&root).unwrap();
+    settings.auto_download = false;
+    retention::save(&root, &settings).unwrap();
+
+    assert!(!retention::load(&root).unwrap().auto_download);
+    assert!(fs::read_to_string(root.join(retention::SETTINGS_FILE))
+        .unwrap()
+        .contains("auto_download = false"));
+}
+
+#[test]
+fn a_settings_file_without_auto_download_still_loads() {
+    let (_dir, root) = root();
+    fs::write(
+        root.join(retention::SETTINGS_FILE),
+        "screenshot_retention = 5\ntrash_retention = 5\n",
+    )
+    .unwrap();
+
+    assert!(retention::load(&root).unwrap().auto_download);
+}
+
+#[test]
+fn a_missing_settings_file_must_be_created_before_it_can_be_read() {
+    let (dir, _root) = root();
+    let fresh = dir.path().join("never-initialized");
+
+    // Reading first fails the way the update commands used to: the layout was
+    // never created, so there is no file to read.
+    assert!(retention::load(&fresh).is_err());
+
+    retention::ensure(&fresh).unwrap();
+    assert!(retention::load(&fresh).unwrap().auto_download);
+}
