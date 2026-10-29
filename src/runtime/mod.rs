@@ -7,3 +7,4 @@ pub mod main_startup;
 pub mod main_window_state;
 pub mod process;
 pub mod ui;
+pub mod update;

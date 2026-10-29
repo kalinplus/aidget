@@ -52,6 +52,7 @@ import { createPreviewRefresh } from './preview-refresh';
 import { createSegmentedControl } from './segmented-control';
 import { createMainStartup } from './startup';
 import { renderMiddleEllipsis } from './text-ellipsis';
+import { createUpdatePage } from './update';
 
 interface WidgetView {
   root: HTMLElement;
@@ -76,7 +77,10 @@ interface DeletedWidgetView {
   trashName: string;
 }
 
-type PreferencesSnapshot = Pick<MainState, 'theme' | 'language' | 'trayClickAction' | 'lastPage'>;
+type PreferencesSnapshot = Pick<
+  MainState,
+  'theme' | 'language' | 'trayClickAction' | 'lastPage' | 'autoDownload'
+>;
 
 const GITHUB_REPOSITORY_URL = 'https://github.com/aidget-ai/aidget';
 const grid = document.querySelector<HTMLElement>('[data-grid]')!;
@@ -119,6 +123,21 @@ const agentStrips = {
   skills: document.querySelector<HTMLElement>('[data-agent-strip="skills"]')!,
 };
 const integrationPage = document.querySelector<HTMLElement>('[data-view="integrations"]')!;
+const aboutPage = document.querySelector<HTMLElement>('[data-view="about"]')!;
+
+let autoDownload = false;
+
+const updatePage = createUpdatePage(
+  aboutPage,
+  () => locale,
+  async (enabled) => {
+    const previous = currentPreferences();
+    autoDownload = enabled;
+    updatePage.setAutoDownload(enabled);
+    await persistPreferences(previous);
+  },
+  (message) => showFault(message),
+);
 const integrationStatuses = document.querySelectorAll<HTMLElement>('.integration-status');
 const views = new Map<string, WidgetView>();
 const deletedViews = new Map<string, DeletedWidgetView>();
@@ -434,7 +453,7 @@ function renderGithubToken() {
 }
 
 function currentPreferences(): PreferencesSnapshot {
-  return { theme, language: locale, trayClickAction, lastPage: page };
+  return { theme, language: locale, trayClickAction, lastPage: page, autoDownload };
 }
 
 function applyPreferences(next: PreferencesSnapshot) {
@@ -442,6 +461,8 @@ function applyPreferences(next: PreferencesSnapshot) {
   theme = next.theme;
   locale = next.language;
   trayClickAction = next.trayClickAction;
+  autoDownload = next.autoDownload;
+  updatePage.setAutoDownload(autoDownload);
   applyTheme(theme);
   if (state) {
     state = {
@@ -449,6 +470,7 @@ function applyPreferences(next: PreferencesSnapshot) {
       theme: next.theme,
       language: next.language,
       trayClickAction: next.trayClickAction,
+      autoDownload: next.autoDownload,
     };
   }
   renderPreferences();
@@ -957,6 +979,9 @@ function render(next: MainState) {
     faultSource = undefined;
   }
   version.textContent = next.version;
+  autoDownload = next.autoDownload;
+  updatePage.setAutoDownload(autoDownload);
+  void updatePage.refresh();
   empty.hidden = deletedMode ? next.deletedWidgets.length > 0 : visibleWidgets.length > 0;
   grid.hidden = deletedMode || visibleWidgets.length === 0;
   deletedGrid.hidden = !deletedMode || next.deletedWidgets.length === 0;

@@ -63,6 +63,7 @@ function state(lastPage: MainState['lastPage']): MainState {
     trayClickAction: 'window',
     lastPage,
     githubToken: null,
+    autoDownload: true,
   };
 }
 
